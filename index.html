@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>关系图生成器</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        /* 样式与之前完全相同，这里省略以节省篇幅，请保留之前的 CSS */
+        body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f9f9f9; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #2c3e50; }
+        input { width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 14px; background: #3498db; color: white; border: none; border-radius: 6px; font-size: 18px; cursor: pointer; }
+        button:disabled { background: #bdc3c7; }
+        #status { margin-top: 20px; text-align: center; min-height: 24px; }
+        #output { margin-top: 30px; padding: 20px; border: 1px dashed #ccc; border-radius: 8px; display: flex; justify-content: center; overflow-x: auto; }
+        .error { color: #e74c3c; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1> AI 关系图生成器</h1>
+    <input type="text" id="context" placeholder="作品/主题名称 (如：甄嬛传)">
+    <input type="text" id="chartType" placeholder="图表类型 (如：后宫剧情发展时间线关系图)">
+    <button id="generateBtn" onclick="generateChart()"> 生成关系图</button>
+    <div id="status"></div>
+    <div id="output"></div>
+</div>
+
+<script>
+    mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+
+    // ================= 配置区域 =================
+    // ⚠️ 替换为你第二步部署的 Cloudflare Worker URL
+    const WORKER_URL = "https://你的Worker名称.你的子域名.workers.dev"; 
+    // ============================================
+
+    async function generateChart() {
+        const context = document.getElementById('context').value.trim();
+        const chartType = document.getElementById('chartType').value.trim();
+        const btn = document.getElementById('generateBtn');
+        const status = document.getElementById('status');
+        const output = document.getElementById('output');
+
+        if (!context || !chartType) {
+            status.innerHTML = '<span class="error">️ 请填写完整的两个输入框！</span>';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = ' 正在生成中...';
+        status.innerHTML = '🔗 正在连接 AI...';
+        output.innerHTML = '';
+
+        const prompt = `请为"${context}"生成核心"${chartType}"的 Mermaid 代码。
+        要求：
+        1. 需要有3个以上 subgraph 分组。连线标签严禁废话（如“认识“），要具体（如"背叛"、"夫妻"）。
+        2. 节点ID用纯英文/拼音，显示格式：ID["中文名"]。
+        3. 连线严格用 A -->|标签| B，绝对禁用 | >。
+        4. subgraph 和 end 必须独占一行。
+        5. 用 classDef 定义样式，用 class A,B main; 颜色柔和; 禁用 :::。
+        6. 只返回纯 Mermaid 代码，不要 markdown 标记和任何解释。
+        标准示例：
+        graph TD
+            subgraph group1 ["分组名"]
+                A["角色A"]
+                B["角色B"]
+            end
+            %% 关系连线
+            A -->|具体关系/情节| B
+            JBC <-->|知己| LDY
+            %% 样式定义
+            classDef elder fill:#ffcccc,stroke:#b53030,stroke-width:2px,font-weight:bold;
+            class JM elder;
+
+        直接返回纯文本的 Mermaid 代码：`;
+
+        try {
+            // 请求我们自己的 Worker，而不是直接请求硅基流动
+            const response = await fetch(WORKER_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    messages: [{ role: "user", content: prompt }]
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.status === 429) {
+                status.innerHTML = `<span class="error">❌ ${data.error}</span>`;
+                btn.disabled = false;
+                btn.innerText = ' 生成关系图';
+                return;
+            }
+
+            if (!response.ok || !data.choices) {
+                throw new Error(data.error || "请求失败");
+            }
+
+            let mermaidCode = data.choices[0].message.content.trim();
+            mermaidCode = mermaidCode.replace(/```mermaid/g, '').replace(/```/g, '').trim();
+            mermaidCode = mermaidCode.replace(/(subgraph\s+\w+\s*\[[^\]]*\])/g, '$1\n');
+            mermaidCode = mermaidCode.replace(/(\]\s*end)/g, '\n$1');
+            mermaidCode = mermaidCode.replace(/(\]\s*classDef)/g, '\n$1');
+
+            const id = 'mermaid-' + Date.now();
+            const { svg } = await mermaid.render(id, mermaidCode);
+            output.innerHTML = svg;
+            status.innerHTML = '🎉 渲染完成！';
+
+        } catch (error) {
+            status.innerHTML = `<span class="error">❌ 生成失败: ${error.message}</span>`;
+        }
+
+        btn.disabled = false;
+        btn.innerText = '🚀 生成关系图';
+    }
+</script>
+</body>
+</html>
