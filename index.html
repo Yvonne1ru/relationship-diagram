@@ -373,7 +373,7 @@
         2. 节点ID用纯英文，显示格式：ID["中文名"]。
         3. 连线严格用 A -->|标签| B，禁用 | >。
         4. subgraph 和 end 必须独占一行。
-        5. 用 classDef 定义样式; 颜色柔和; 禁用 :::。
+        5. 用 classDef 定义样式，用 class A,B main; 颜色柔和; 禁用 :::。
         6. 只返回纯 Mermaid 代码，禁解释。
         示例：
         graph TD
@@ -386,7 +386,9 @@
             B <-->|知己| C
             %% 样式
             classDef elder fill:#ffcccc,stroke:#b53030,stroke-width:2px,font-weight:bold;
-            class JM elder;`;
+            class JM elder;
+        
+        直接返回纯文本的 Mermaid 代码：`;
 
         try {
             const response = await fetch(WORKER_URL, {
