@@ -367,28 +367,26 @@
         exportBtns.classList.remove('show');
         resetZoom(); // 重置缩放状态
 
-        const prompt = `请为"${context}"生成核心"${chartType}"的 Mermaid 代码。
-        要求：
-        1. 需要有3个以上 subgraph 分组。连线标签严禁废话（如“认识“），要具体（如"背叛"、"夫妻"）。
-        2. 节点ID用纯英文/拼音，显示格式：ID["中文名"]。
-        3. 连线严格用 A -->|标签| B，绝对禁用 | >。
+        const prompt = `为"${context}"生成核心"${chartType}"的 Mermaid 代码。
+        强制要求：
+        1. 15 个以上节点，3个以上 subgraph 分组。严禁废话（如“认识“），要具体（如"背叛"、"夫妻"）。
+        2. 节点ID用纯英文，显示格式：ID["中文名"]。
+        3. 连线严格用 A -->|标签| B，禁用 | >。
         4. subgraph 和 end 必须独占一行。
-        5. 用 classDef 定义样式，用 class A,B main; 颜色柔和; 禁用 :::。
-        6. 只返回纯 Mermaid 代码，不要 markdown 标记和任何解释。
-        标准示例：
+        5. 用 classDef 定义样式; 颜色柔和; 禁用 :::。
+        6. 只返回纯 Mermaid 代码，禁解释。
+        示例：
         graph TD
-            subgraph group1 ["分组名"]
+            subgraph group1 ["组名"]
                 A["角色A"]
                 B["角色B"]
             end
-            %% 关系连线
-            A -->|具体关系/情节| B
-            JBC <-->|知己| LDY
-            %% 样式定义
+            %% 关系
+            A -->|夫妻/背叛| B
+            B <-->|知己| C
+            %% 样式
             classDef elder fill:#ffcccc,stroke:#b53030,stroke-width:2px,font-weight:bold;
-            class JM elder;
-
-        直接返回纯文本的 Mermaid 代码：`;
+            class JM elder;`;
 
         try {
             const response = await fetch(WORKER_URL, {
@@ -426,7 +424,7 @@
             status.innerHTML = `<span class="error">❌ 生成失败: ${error.message}</span>`;
         } finally {
             btn.disabled = false;
-            btnText.innerHTML = '🚀 生成关系图';
+            btnText.innerHTML = '🌸 生成关系图';
         }
     }
 
@@ -437,7 +435,7 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${currentContext}-关系图.mmd`;
+        a.download = `${currentContext}-关系图.md`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -451,11 +449,19 @@
         const status = document.getElementById('status');
         status.innerHTML = '🌸 正在生成高清 PNG...';
 
-        const bbox = svgElement.getBoundingClientRect();
-        const width = bbox.width;
-        const height = bbox.height;
-        const scaleRatio = 2; // 2倍高清
-        
+        // 用 viewBox 或 SVG 属性获取真实尺寸，避免 getBoundingClientRect 在 transform 下返回 0
+        let width, height;
+        const vb = svgElement.getAttribute('viewBox');
+        if (vb) {
+            const parts = vb.split(/[\s,]+/);
+            width = parseFloat(parts[2]);
+            height = parseFloat(parts[3]);
+        } else {
+            width = parseFloat(svgElement.getAttribute('width')) || svgElement.scrollWidth || 800;
+            height = parseFloat(svgElement.getAttribute('height')) || svgElement.scrollHeight || 600;
+        }
+
+        const scaleRatio = 2;
         const canvas = document.createElement('canvas');
         canvas.width = width * scaleRatio;
         canvas.height = height * scaleRatio;
@@ -464,33 +470,41 @@
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
 
+        // 克隆 SVG 并明确设置宽高，确保绘制时尺寸正确
+        const cloned = svgElement.cloneNode(true);
+        cloned.setAttribute('width', width);
+        cloned.setAttribute('height', height);
+        // 内联所有 <style> 中的字体声明，避免 blob URL 跨域加载外部字体失败
+        cloned.querySelectorAll('style').forEach(s => {
+            s.textContent = s.textContent.replace(/@import[^;]+;/g, '');
+        });
+
         const serializer = new XMLSerializer();
-        let svgString = serializer.serializeToString(svgElement);
-        if (!svgString.match(/^<svg[^>]+xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)) {
+        let svgString = serializer.serializeToString(cloned);
+        if (!svgString.includes('xmlns=')) {
             svgString = svgString.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
         }
-        
-        const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
-        const svgUrl = URL.createObjectURL(svgBlob);
-        
+
+        // 用 base64 data URL 而非 blob URL，避免 iOS Safari 异步下载被拦截
+        const b64 = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
+
         const img = new Image();
         img.onload = function() {
             ctx.drawImage(img, 0, 0, width, height);
-            URL.revokeObjectURL(svgUrl);
-            canvas.toBlob(function(blob) {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${currentContext}-关系图.png`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                status.innerHTML = '🎉 PNG 已下载！';
-            }, 'image/png');
+            // toDataURL 同步返回，保持在用户手势上下文内
+            const dataUrl = canvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = `${currentContext}-关系图.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            status.innerHTML = '🎉 PNG 已下载！';
         };
-        img.onerror = () => status.innerHTML = '<span class="error">❌ 导出失败</span>';
-        img.src = svgUrl;
+        img.onerror = () => {
+            status.innerHTML = '<span class="error">❌ 导出失败，请截图保存</span>';
+        };
+        img.src = b64;
     }
 </script>
 </body>
