@@ -2,56 +2,370 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>关系图生成器</title>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <style>
-        /* 样式与之前完全相同，这里省略以节省篇幅，请保留之前的 CSS */
-        body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f9f9f9; }
-        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { text-align: center; color: #2c3e50; }
-        input { width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
-        button { width: 100%; padding: 14px; background: #3498db; color: white; border: none; border-radius: 6px; font-size: 18px; cursor: pointer; }
-        button:disabled { background: #bdc3c7; }
-        #status { margin-top: 20px; text-align: center; min-height: 24px; }
-        #output { margin-top: 30px; padding: 20px; border: 1px dashed #ccc; border-radius: 8px; display: flex; justify-content: center; overflow-x: auto; }
-        .error { color: #e74c3c; }
+        /* ================= 全局与变量 ================= */
+        :root {
+            --bg: #f4f6f8;
+            --card-bg: #ffffff;
+            --primary: #8b8dd4; /* 柔和靛蓝 */
+            --primary-hover: #8882f8;
+            --text-main: #2d3748;
+            --text-sub: #718096;
+            --border: #e2e8f0;
+            --success: #478d75;
+            --warning: #f6b038;
+            --danger: #ca5353;
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+            --radius: 16px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        /* ================= 布局与卡片 ================= */
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 40px;
+            border: 1px solid var(--border);
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            text-align: center;
+            color: var(--text-sub);
+            font-size: 15px;
+            margin-bottom: 32px;
+        }
+
+        /* ================= 表单元素 ================= */
+        .input-group { margin-bottom: 20px; }
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-sub);
+            margin-bottom: 8px;
+        }
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            font-size: 16px; /* 防止 iOS 聚焦时自动缩放 */
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            background: #fafafa;
+            transition: all 0.2s;
+            color: var(--text-main);
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+        input::placeholder { color: #a0aec0; }
+
+        /* ================= 按钮 ================= */
+        .btn {
+            width: 100%;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+        }
+        .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
+        .btn-primary:active { transform: translateY(0); }
+        .btn:disabled {
+            background: #cbd5e0;
+            color: #a0aec0;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+
+        /* ================= 状态与输出区 ================= */
+        #status {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 15px;
+            min-height: 24px;
+            color: var(--text-sub);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .error { color: var(--danger); font-weight: 500; }
+        
+        /* Loading 动画 */
+        .spinner {
+            width: 18px; height: 18px;
+            border: 2px solid rgba(99, 102, 241, 0.2);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 图表交互容器 */
+        .chart-area {
+            margin-top: 30px;
+            position: relative;
+            border: 1.5px dashed var(--border);
+            border-radius: 12px;
+            background: #fcfcfc;
+            min-height: 300px;
+            overflow: hidden; /* 关键：隐藏超出部分 */
+            display: none; /* 默认隐藏，生成后显示 */
+        }
+        .chart-area.show { display: block; }
+
+        /* 悬浮控制按钮 */
+        .chart-controls {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+        .ctrl-btn {
+            width: 36px; height: 36px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--text-sub);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+        }
+        .ctrl-btn:hover { background: var(--primary); color: white; border-color: var(--primary); }
+
+        /* 图表包裹层 (用于 transform) */
+        #output-wrapper {
+            width: 100%;
+            height: 100%;
+            min-height: 400px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            transition: transform 0.1s ease-out;
+            transform-origin: center center;
+            cursor: grab;
+        }
+        #output-wrapper:active { cursor: grabbing; }
+        
+        #output {
+            max-width: 100%;
+            overflow: visible;
+        }
+        #output svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* ================= 导出按钮组 ================= */
+        .export-group {
+            display: none;
+            margin-top: 24px;
+            gap: 12px;
+        }
+        .export-group.show { display: flex; }
+        .export-group .btn {
+            flex: 1;
+            padding: 12px;
+            font-size: 15px;
+            box-shadow: none;
+            border: 1.5px solid;
+        }
+        .btn-mermaid { background: #ecfdf5; color: var(--success); border-color: #a7f3d0; }
+        .btn-mermaid:hover { background: #d1fae5; }
+        .btn-png { background: #fffbeb; color: var(--warning); border-color: #fde68a; }
+        .btn-png:hover { background: #fef3c7; }
+
+        /* ================= 移动端适配 ================= */
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            .container { padding: 24px 20px; border-radius: 12px; }
+            h1 { font-size: 22px; }
+            .subtitle { font-size: 14px; margin-bottom: 24px; }
+            input { padding: 12px 14px; }
+            .btn { padding: 12px; }
+            .export-group { flex-direction: column; }
+            .chart-controls { top: 8px; right: 8px; }
+            .ctrl-btn { width: 32px; height: 32px; font-size: 16px; }
+        }
     </style>
 </head>
 <body>
+
 <div class="container">
-    <h1> AI 关系图生成器</h1>
-    <input type="text" id="context" placeholder="作品/主题名称 (如：甄嬛传)">
-    <input type="text" id="chartType" placeholder="图表类型 (如：后宫剧情发展时间线关系图)">
-    <button id="generateBtn" onclick="generateChart()"> 生成关系图</button>
+    <h1>关系图生成器</h1>
+    <p class="subtitle">输入作品与图表类型，AI 将为你绘制复杂的人物/阵营关系网</p>
+    
+    <div class="input-group">
+        <label for="context">作品/主题名称</label>
+        <input type="text" id="context" placeholder="例如：甄嬛传、三体、红楼梦">
+    </div>
+    
+    <div class="input-group">
+        <label for="chartType">图表类型</label>
+        <input type="text" id="chartType" placeholder="例如：后宫剧情发展时间线、核心阵营关系图">
+    </div>
+    
+    <button id="generateBtn" class="btn btn-primary" onclick="generateChart()">
+        <span id="btn-text">🔗 生成关系图</span>
+    </button>
+    
     <div id="status"></div>
-    <div id="output"></div>
+
+    <!-- 图表交互区域 -->
+    <div id="chart-area" class="chart-area">
+        <div class="chart-controls">
+            <button class="ctrl-btn" onclick="zoomIn()" title="放大">+</button>
+            <button class="ctrl-btn" onclick="zoomOut()" title="缩小">-</button>
+            <button class="ctrl-btn" onclick="resetZoom()" title="重置">↺</button>
+        </div>
+        <div id="output-wrapper">
+            <div id="output"></div>
+        </div>
+    </div>
+    
+    <!-- 导出按钮组 -->
+    <div id="export-btns" class="export-group">
+        <button class="btn btn-mermaid" onclick="exportMermaid()">🌟 导出 Mermaid 源码</button>
+        <button class="btn btn-png" onclick="exportPNG()">🌸 导出高清 PNG</button>
+    </div>
 </div>
 
 <script>
     mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
 
     // ================= 配置区域 =================
-    // ⚠️ 替换为你第二步部署的 Cloudflare Worker URL
     const WORKER_URL = "https://mermaid-proxy.pyr970207.workers.dev"; 
     // ============================================
 
+    let currentMermaidCode = '';
+    let currentContext = '';
+
+    // ================= 图表交互逻辑 (缩放与拖拽) =================
+    let scale = 1, posX = 0, posY = 0;
+    let isDown = false, startX, startY;
+    const chartArea = document.getElementById('chart-area');
+    const wrapper = document.getElementById('output-wrapper');
+
+    function applyTransform() {
+        wrapper.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`;
+    }
+    function zoomIn() { scale = Math.min(scale * 1.2, 4); applyTransform(); }
+    function zoomOut() { scale = Math.max(scale / 1.2, 0.3); applyTransform(); }
+    function resetZoom() { scale = 1; posX = 0; posY = 0; applyTransform(); }
+
+    // 鼠标滚轮缩放
+    chartArea.addEventListener('wheel', e => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        scale = Math.max(0.3, Math.min(4, scale * delta));
+        applyTransform();
+    }, {passive: false});
+
+    // 鼠标拖拽
+    chartArea.addEventListener('mousedown', e => { 
+        if(e.target.closest('.ctrl-btn')) return; // 点击控制按钮时不触发拖拽
+        isDown = true; 
+        startX = e.clientX - posX; 
+        startY = e.clientY - posY; 
+    });
+    window.addEventListener('mousemove', e => { 
+        if(isDown) { 
+            posX = e.clientX - startX; 
+            posY = e.clientY - startY; 
+            applyTransform(); 
+        } 
+    });
+    window.addEventListener('mouseup', () => { isDown = false; });
+
+    // 触摸拖拽 (手机端)
+    chartArea.addEventListener('touchstart', e => {
+        if(e.touches.length === 1 && !e.target.closest('.ctrl-btn')) {
+            isDown = true;
+            startX = e.touches[0].clientX - posX;
+            startY = e.touches[0].clientY - posY;
+        }
+    });
+    chartArea.addEventListener('touchmove', e => {
+        if(isDown && e.touches.length === 1) {
+            e.preventDefault();
+            posX = e.touches[0].clientX - startX;
+            posY = e.touches[0].clientY - startY;
+            applyTransform();
+        }
+    }, {passive: false});
+    chartArea.addEventListener('touchend', () => { isDown = false; });
+
+
+    // ================= 核心生成逻辑 =================
     async function generateChart() {
         const context = document.getElementById('context').value.trim();
         const chartType = document.getElementById('chartType').value.trim();
         const btn = document.getElementById('generateBtn');
+        const btnText = document.getElementById('btn-text');
         const status = document.getElementById('status');
         const output = document.getElementById('output');
+        const exportBtns = document.getElementById('export-btns');
 
         if (!context || !chartType) {
-            status.innerHTML = '<span class="error">️ 请填写完整的两个输入框！</span>';
+            status.innerHTML = '<span class="error">⚠️ 请填写完整的两个输入框！</span>';
             return;
         }
 
+        // 重置 UI
         btn.disabled = true;
-        btn.innerText = ' 正在生成中...';
-        status.innerHTML = '🔗 正在连接 AI...';
+        btnText.innerHTML = '<span class="spinner"></span> 正在生成中...';
+        status.innerHTML = '🔗 正在连接 AI 模型...';
         output.innerHTML = '';
+        chartArea.classList.remove('show');
+        exportBtns.classList.remove('show');
+        resetZoom(); // 重置缩放状态
 
         const prompt = `请为"${context}"生成核心"${chartType}"的 Mermaid 代码。
         要求：
@@ -77,27 +391,19 @@
         直接返回纯文本的 Mermaid 代码：`;
 
         try {
-            // 请求我们自己的 Worker，而不是直接请求硅基流动
             const response = await fetch(WORKER_URL, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    messages: [{ role: "user", content: prompt }]
-                })
+                body: JSON.stringify({ messages: [{ role: "user", content: prompt }] })
             });
 
             const data = await response.json();
 
             if (response.status === 429) {
                 status.innerHTML = `<span class="error">❌ ${data.error}</span>`;
-                btn.disabled = false;
-                btn.innerText = ' 生成关系图';
                 return;
             }
-
-            if (!response.ok || !data.choices) {
-                throw new Error(data.error || "请求失败");
-            }
+            if (!response.ok || !data.choices) throw new Error(data.error || "请求失败");
 
             let mermaidCode = data.choices[0].message.content.trim();
             mermaidCode = mermaidCode.replace(/```mermaid/g, '').replace(/```/g, '').trim();
@@ -108,14 +414,83 @@
             const id = 'mermaid-' + Date.now();
             const { svg } = await mermaid.render(id, mermaidCode);
             output.innerHTML = svg;
-            status.innerHTML = '🎉 渲染完成！';
+            
+            // 显示图表和导出按钮
+            currentMermaidCode = mermaidCode;
+            currentContext = context;
+            chartArea.classList.add('show');
+            exportBtns.classList.add('show');
+            status.innerHTML = '🎉 渲染完成！你可以拖拽或滚轮缩放查看细节。';
 
         } catch (error) {
             status.innerHTML = `<span class="error">❌ 生成失败: ${error.message}</span>`;
+        } finally {
+            btn.disabled = false;
+            btnText.innerHTML = '🚀 生成关系图';
         }
+    }
 
-        btn.disabled = false;
-        btn.innerText = '🚀 生成关系图';
+    // ================= 导出功能 =================
+    function exportMermaid() {
+        if (!currentMermaidCode) return;
+        const blob = new Blob([currentMermaidCode], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${currentContext}-关系图.mmd`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function exportPNG() {
+        const svgElement = document.querySelector('#output svg');
+        if (!svgElement) return;
+
+        const status = document.getElementById('status');
+        status.innerHTML = '🌸 正在生成高清 PNG...';
+
+        const bbox = svgElement.getBoundingClientRect();
+        const width = bbox.width;
+        const height = bbox.height;
+        const scaleRatio = 2; // 2倍高清
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = width * scaleRatio;
+        canvas.height = height * scaleRatio;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scaleRatio, scaleRatio);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        const serializer = new XMLSerializer();
+        let svgString = serializer.serializeToString(svgElement);
+        if (!svgString.match(/^<svg[^>]+xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)) {
+            svgString = svgString.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+        }
+        
+        const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+        const svgUrl = URL.createObjectURL(svgBlob);
+        
+        const img = new Image();
+        img.onload = function() {
+            ctx.drawImage(img, 0, 0, width, height);
+            URL.revokeObjectURL(svgUrl);
+            canvas.toBlob(function(blob) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${currentContext}-关系图.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                status.innerHTML = '🎉 PNG 已下载！';
+            }, 'image/png');
+        };
+        img.onerror = () => status.innerHTML = '<span class="error">❌ 导出失败</span>';
+        img.src = svgUrl;
     }
 </script>
 </body>
