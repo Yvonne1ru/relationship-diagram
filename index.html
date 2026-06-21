@@ -360,8 +360,13 @@
         return code.split('\n').map(line => {
             // classDef 中文名 ...  →  classDef safeId ...
             line = line.replace(/^(\s*classDef\s+)(\S+)/, (_, prefix, name) => prefix + toSafeId(name));
-            // class A,B 中文名  →  class A,B safeId
-            line = line.replace(/^(\s*class\s+[\w,\s]+\s+)(\S+)$/, (_, prefix, name) => prefix + toSafeId(name));
+            // class A, B, C 中文名  →  去掉逗号后空格，替换中文类名
+            if (/^\s*class\s/.test(line)) {
+                // 去掉节点列表中逗号后的空格：", " → ","
+                line = line.replace(/,\s+/g, ',');
+                // 替换末尾中文类名
+                line = line.replace(/^(\s*class\s+[\w,]+\s+)(\S+)$/, (_, prefix, name) => prefix + toSafeId(name));
+            }
             return line;
         }).join('\n');
     }
@@ -398,6 +403,7 @@
         4. subgraph 和 end 必须独占一行。
         5. 用 classDef 定义样式，类名用英文并有空格，如 class A,B main; 颜色柔和; 禁用 :::。
         6. 只返回纯 Mermaid 代码，禁解释。
+        7. 换行不要<br>符号
         示例：
         graph TD
             subgraph group1 ["组名"]
