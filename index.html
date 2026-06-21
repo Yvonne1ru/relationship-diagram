@@ -343,6 +343,29 @@
     chartArea.addEventListener('touchend', () => { isDown = false; });
 
 
+    // ================= Mermaid 代码清洗 =================
+    function sanitizeMermaid(code) {
+        const classMap = {};
+        let counter = 0;
+
+        // 将中文类名映射为 cls0, cls1, ...
+        function toSafeId(name) {
+            if (/[^\x00-\x7F]/.test(name)) {
+                if (!classMap[name]) classMap[name] = 'cls' + (counter++);
+                return classMap[name];
+            }
+            return name;
+        }
+
+        return code.split('\n').map(line => {
+            // classDef 中文名 ...  →  classDef safeId ...
+            line = line.replace(/^(\s*classDef\s+)(\S+)/, (_, prefix, name) => prefix + toSafeId(name));
+            // class A,B 中文名  →  class A,B safeId
+            line = line.replace(/^(\s*class\s+[\w,\s]+\s+)(\S+)$/, (_, prefix, name) => prefix + toSafeId(name));
+            return line;
+        }).join('\n');
+    }
+
     // ================= 核心生成逻辑 =================
     async function generateChart() {
         const context = document.getElementById('context').value.trim();
@@ -373,7 +396,7 @@
         2. 节点ID用纯英文，显示格式：ID["中文名"]。
         3. 连线严格用 A -->|标签| B，禁用 | >。
         4. subgraph 和 end 必须独占一行。
-        5. 用 classDef 定义样式，类名必须使用英文，并保留空格，如 class A,B main; 颜色柔和; 禁用 :::。
+        5. 用 classDef 定义样式，类名用英文并有空格，如 class A,B main; 颜色柔和; 禁用 :::。
         6. 只返回纯 Mermaid 代码，禁解释。
         示例：
         graph TD
@@ -410,6 +433,7 @@
             mermaidCode = mermaidCode.replace(/(subgraph\s+\w+\s*\[[^\]]*\])/g, '$1\n');
             mermaidCode = mermaidCode.replace(/(\]\s*end)/g, '\n$1');
             mermaidCode = mermaidCode.replace(/(\]\s*classDef)/g, '\n$1');
+            mermaidCode = sanitizeMermaid(mermaidCode);
 
             const id = 'mermaid-' + Date.now();
             const { svg } = await mermaid.render(id, mermaidCode);
